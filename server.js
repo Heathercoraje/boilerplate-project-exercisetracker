@@ -88,26 +88,40 @@ app.post('/api/exercise/add', (req, res, next) => {
 });
 
 app.get('/api/exercise/log', (req, res, next) => {
-  const { userId } = req.query; 
-  let userObjectwithCount;
+  const { userId, from, to, limit } = req.query; 
+  if (from)
+  // let userObjectwithCount;
+  
+  if(!userId) res.sendError(null, "Bad request: no userId");
+  
+  let options = {};
+  let query = { userId }; // this is incorrect query
+  if (limit) options.limit = parseInt(limit);
 
-  User.find({ _id: userId }, (error, document) => {
+  if(from && to) query.date = { $gtl: from, $lte: to};
+  else if (from) query.date = { $gtl: from };
+  else if (to) query.date = { $lte: to };
+
+
+  User.find(query, null, options, (error, document) => {
     if (error) res.json({ error: "Error while finding this user"});
-    if (!document.length) res.json({ error: `No user exist with userId: ${userId}`});
-    else {
-      const { exercise } = document[0];
+    // if (!document.length) res.json({ error: `No user exist with userId: ${userId}`});
+    console.log('query', query); // filter
+    console.log('document', document);
+    // else {
+    //   const { exercise } = document[0];
       
-      userObjectwithCount = {
-        userId,
-        count: exercise ? exercise.length: 0,
-        exercise
-      }  
-      res.json(userObjectwithCount)
-    }
+    //   userObjectwithCount = {
+    //     userId,
+    //     count: exercise ? exercise.length: 0,
+    //     exercise
+    //   }  
+    //   res.json(userObjectwithCount)
+    // }
   });
  });
 
-app.get('/api/exercise/log/:userId', (req, res, next) => {
+app.get('/api/exercise/log', (req, res, next) => {
    // retrieve part of the log 
    // extra param
    // use the original route
