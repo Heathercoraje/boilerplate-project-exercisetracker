@@ -89,33 +89,29 @@ app.post('/api/exercise/add', (req, res, next) => {
 
 app.get('/api/exercise/log', (req, res, next) => {
   const { userId } = req.query; 
-  let userObject;
-  console.log('userId', req.query.userId);
+  let userObjectwithCount;
 
   User.find({ _id: userId }, (error, document) => {
     if (error) res.json({ error: "Error while finding this user"});
     if (!document.length) res.json({ error: `No user exist with userId: ${userId}`});
     else {
-      console.log('.find', document);
-      const log = document.exercise;  
+      const { exercise } = document[0];
       
-      userObject = {
+      userObjectwithCount = {
         userId,
-        log: log ? log : [],
-        count: log ? log.length: 0
+        count: exercise ? exercise.length: 0,
+        exercise
       }  
-      console.log('find->userObject', userObject);
-      res.json(userObject)
+      res.json(userObjectwithCount)
     }
   });
  });
-
 
 app.get('/api/exercise/log/:userId', (req, res, next) => {
    // retrieve part of the log 
    // extra param
    // use the original route
-  });
+});
   
 
 const listener = app.listen(process.env.PORT || 3000, () => {
