@@ -19,11 +19,20 @@ module.exports = function (app) {
       });
   });
 
+  app.post('/api/users/user', (req, res, next) => {
+    const { username } = req.body;
+    User.find({ username: username })
+      .exec((error, documents) => {
+        if (error) next(new Error(error));
+        res.json(documents);
+      });
+  });
   //////////////////////////////////////////
   // To view a single user and exercises
   // request would be 'api/users/{username}'
   ///////////////////////////////////////////
   app.get('/api/users/:username', (req, res, next) => {
+    console.log(req.params);
     const { username } = req.params;
     User.findOne({ username })
       .exec((error, { username, exercises }) => {
