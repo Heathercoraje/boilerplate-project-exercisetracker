@@ -1,36 +1,6 @@
 const { body, query, validationResult } = require('express-validator/check');
 const User = require('./userModel');
-
-// fix this validation
-function handleValidationError(validationErrors, next) {
-  if (!validationErrors.isEmpty()) {
-    const errorArray = validationErrors.array();
-    if (errorArray.length === 1) {
-      const { param, msg: message } = errorArray[0];
-      return next(new Error(JSON.stringify({ param, message })));
-    }
-
-    ////////////////////////////////////////////////////////////
-    /// if errorArray has more than 1 item 
-    /// if username or other param problems 
-    /// while them not being null input i.e. wrong date format
-    ////////////////////////////////////////////////////////////
-
-    let errors = [];
-    errorArray.forEach(e => {
-      if (e.param !== 'username' && e.value !== '' || e.param == 'username') {
-        console.log(errors);
-        errors.push(JSON.stringify({
-          param: e.param,
-          message: e.message
-        }))
-      }
-    });
-    if (errors.length) {
-      return next(new Error(errors));
-    }
-  }
-}
+const sanitiseValidationError = require('./helper');
 
 module.exports = function (app) {
   //////////////
@@ -46,36 +16,33 @@ module.exports = function (app) {
   app.get('/api/users', (req, res, next) => {
     User.find({})
       .exec((error, documents) => {
-        if (error) next(new Error(error));
+        if (error) return next(new Error(error));
         res.json(documents);
       });
   });
+
+  //////////////////////////////////////////
+  // To view a single user and exercises
+  // request POST would be 'api/users/user'
+  ///////////////////////////////////////////
 
   app.post('/api/users/user', (req, res, next) => {
     const { username } = req.body;
     User.find({ username: username })
       .exec((error, documents) => {
-        if (error) next(new Error(error));
-        res.json(documents);
-      });
-  });
-  //////////////////////////////////////////
-  // To view a single user and exercises
-  // request would be 'api/users/{username}'
-  ///////////////////////////////////////////
-  app.get('/api/users/:username', (req, res, next) => {
-    console.log(req.params);
-    const { username } = req.params;
-    User.findOne({ username })
-      .exec((error, { username, exercises }) => {
-        if (erorr) return next(new Error(error));
-        res.json({ username, exercises })
+        if (error) return next(new Error(error));
+        if (!documents.length) {
+          res.json({ Error: 'This username is not registered. Please register first' });
+        } else {
+          res.json({ username, exercises: documents[0].exercises });
+        }
       });
   });
 
   //////////////////////////////////////////////
   // Register new user if username is not taken
   //////////////////////////////////////////////
+
   app.post('/api/users/new-user', [
     // username validation
     body('username')
@@ -86,26 +53,25 @@ module.exports = function (app) {
       .withMessage('Username must consist of only alphanumeric characters')
   ], (req, res, next) => {
     const { username } = req.body;
-    const validationErrors = validationResult(req);
 
-    handleValidationError(validationErrors, next);
+    const validationErrorMessage = sanitiseValidationError(validationResult(req));
+    if (validationErrorMessage) return next(new Error(validationErrorMessage));
 
     const user = new User({
       username: username
     });
 
     User.find({ username: username }, (error, document) => {
-      if (error) res.json({ error: "Error while finding this user" });
-      if (document.length) res.json({ error: `Username  ${username} is already exist, please choose a differnet username` });
+      if (error) return next(new Error("Error while finding this user"));
+      if (document.length) return next(new Error(`Username  ${username} is already exist, please choose a differnet username`));
       else {
         user.save((error, savedDocument) => {
-          if (error) res.json({ error: "Error while saving a user" });
+          if (error) return next(new Error("Error= while saving a user"));
           res.json({ username: savedDocument.username, id: savedDocument._id })
         });
       }
     });
   });
-
 
   //////////////////////////////////////////
   // Add new exercise entry
@@ -143,73 +109,95 @@ module.exports = function (app) {
   ], (req, res, next) => {
     const { username, description, duration, date } = req.body;
 
-    const validationErrors = validationResult(req);
-    handleValidationError(validationErrors, next);
+    const validationErrorMessage = sanitiseValidationError(validationResult(req));
+    if (validationErrorMessage) return next(new Error(validationErrorMessage));
+    // https://rollbar.com/guides/javascript-throwing-exceptions/
 
     const newExercise = { username, date, description, duration };
 
     User.findOne({ username: username }, (error, document) => {
       if (error) return next(new Error(error));
-      if (document === null) return next(new Error(`username: ${username} is not found`));
+      if (document === null) return next(new Error(`${username} is not found`));
 
       document.exercises.push(newExercise);
       document.save((error, document) => {
-        if (error) return next(new Error('Something wrong while saving data'));
+        if (error) return next(new Error(error));
         res.json({
           success: true,
           message: 'New exercise entry successfully added',
-          data: document
+          exercises: document.exercises
         });
       });
     });
   });
 
-
-  //////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////
   // Retrieve exercise history
   // GET /api/exercise/log?{username}[&from][&to][&limit]
   // FOR EXAMPLE /api/exercise/log?username=heathercoraje20&from&to&limit=1
-  ///////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////
+
   app.get('/api/exercise/log', [
     // Exercise validation
     query('username')
-    .trim()
-    .isLength({ min: 4, max: 20 }).withMessage('Invalid Username')
-    .isAlphanumeric().withMessage('Invalid Username'),
+      .trim()
+      .isLength({ min: 4, max: 20 }).withMessage('Invalid Username')
+      .isAlphanumeric().withMessage('Invalid Username'),
 
-  query('from')
-    .trim()
-    .isISO8601()
-    .withMessage('Invalid date')
-    .isAfter(new Date(0).toJSON())
-    .isBefore(new Date('2999-12-31').toJSON())
-    .withMessage("Invalid Date"),
+    query('from')
+      .trim()
+      .isISO8601()
+      .withMessage('Invalid date')
+      .isAfter(new Date(0).toJSON())
+      .isBefore(new Date('2999-12-31').toJSON())
+      .withMessage("Invalid Date"),
 
-  query('to')
-    .trim()
-    .isISO8601()
-    .withMessage('Invalid date')
-    .isAfter(new Date(0).toJSON())
-    .isBefore(new Date('2999-12-31').toJSON())
-    .withMessage("Invalid Date"),
+    query('to')
+      .trim()
+      .isISO8601()
+      .withMessage('Invalid date')
+      .isAfter(new Date(0).toJSON())
+      .isBefore(new Date('2999-12-31').toJSON())
+      .withMessage("Invalid Date"),
 
-  query('limit')
-    .trim()
-    .isNumeric({ no_symbols: true })
-    .withMessage('Invalid Number')
+    query('limit')
+      .trim()
+      .isNumeric({ no_symbols: true })
+      .withMessage('Invalid Number')
 
   ], (req, res, next) => {
     const { username } = req.query;
-    const limit = req.query.limit === '' ? 100 : req.query.limit;
-    console.log('Limit', limit)
+
+    // set default values when input it empty string 
     // https://nodejs.org/en/knowledge/javascript-conventions/how-to-create-default-parameters-for-functions/
+    const limit = req.query.limit === '' ? 100 : req.query.limit;
+    const from = req.query.from === '' ? new Date(0) : req.query.from;
+    const to = req.query.to === '' ? new Date() : req.query.to;
 
-    const validationErrors = validationResult(req);
-    handleValidationError(validationErrors, next);
 
-  User.aggregate([{ $match: { username }},{ $unwind: '$exercises' },{ $limit: Number(limit) }])
-      .then(documents => {
-        res.json(documents);
-      })
+    const validationErrorMessage = sanitiseValidationError(validationResult(req));
+    if (validationErrorMessage) return next(new Error(validationErrorMessage));
+
+    User.aggregate([{ $match: { username } },
+    { $unwind: '$exercises' },
+    { $match: { 'exercises.date': { $gte: new Date(from), $lte: new Date(to) } } },
+    { $limit: Number(limit) }
+    ])
+      .then(documents => res.json({ count: documents.length, exercises: documents}));
   });
+
+  // Default route hanlder
+  // not found redirects to main
+  app.get('*', (req, res, next) => {
+    res.redirect('/')
+  });
+
+  // Error Handle middleware
+  app.use((error, req, res, next) => {
+    console.error(error);
+    res.json({
+      success: false,
+      error: error.message
+    })
+  })
 }
